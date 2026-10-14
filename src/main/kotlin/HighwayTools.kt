@@ -67,6 +67,8 @@ object HighwayTools : PluginModule(
     val cornerBlock by setting("Corner Block", false, { page == Page.BLUEPRINT && (mode == Structure.HIGHWAY || (mode == Structure.TUNNEL && !backfill && width > 2)) }, description = "If activated will break the corner in tunnel or place a corner while paving")
     val railing by setting("Railing", true, { page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Adds a railing/rim/border to the highway")
     val railingHeight by setting("Railing Height", 1, 1..4, 1, { railing && page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Sets height of railing", unit = " blocks")
+    val ceiling by setting("Ceiling", false, { page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Adds a ceiling on top of the highway")
+    val ceilingHeight by setting("Ceiling Height", 4, 3..6, 1, { ceiling && page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Sets how high above the floor the ceiling is built", unit = " blocks")
     private val materialSaved = setting("Material", "minecraft:obsidian", { false })
     private val fillerMatSaved = setting("FillerMat", "minecraft:netherrack", { false })
     private val foodItem = setting("FoodItem", "minecraft:golden_apple", { false })
@@ -81,6 +83,7 @@ object HighwayTools : PluginModule(
 
     // mining
     val breakDelay by setting("Break Delay", 1, 1..20, 1, { page == Page.MINING }, description = "Sets the delay ticks between break tasks", unit = " ticks")
+    val breakDelayMs by setting("Break Delay MS", 0, 0..1000, 5, { page == Page.MINING }, description = "Extra delay in milliseconds between break tasks. Both delays must pass (the bot acts once per tick, 50 ms)", unit = " ms")
     val miningSpeedFactor by setting("Mining Speed Factor", 1.0f, 0.0f..2.0f, 0.01f, { page == Page.MINING }, description = "Factor to manipulate calculated mining speed")
     val interactionLimit by setting("Interaction Limit", 20, 1..100, 1, { page == Page.MINING }, description = "Set the interaction limit per second", unit = " interactions/s")
     val multiBreak by setting("Multi Break", true, { page == Page.MINING }, description = "Breaks multiple instant breaking blocks intersecting with view vector")
@@ -88,9 +91,11 @@ object HighwayTools : PluginModule(
     val instantMine by setting("Ender Chest Instant Mine", false, { page == Page.MINING && packetFlood }, description = "Instant mine NCP exploit")
 
     // placing
-    val placeDelay by setting("Place Delay", 3, 1..20, 1, { page == Page.PLACING }, description = "Sets the delay ticks between placement tasks")
+    val placeDelay by setting("Place Delay", 3, 1..20, 1, { page == Page.PLACING }, description = "Sets the delay ticks between placement tasks", unit = " ticks")
+    val placeDelayMs by setting("Place Delay MS", 0, 0..1000, 5, { page == Page.PLACING }, description = "Extra delay in milliseconds between placement tasks. Both delays must pass (the bot acts once per tick, 50 ms)", unit = " ms")
     val dynamicDelay by setting("Dynamic Place Delay", true, { page == Page.PLACING }, description = "Slows down on failed placement attempts")
     val illegalPlacements by setting("Illegal Placements", false, { page == Page.PLACING }, description = "Do not use on 2b2t. Tries to interact with invisible surfaces")
+    val lavaBeforeFill by setting("Lava Before Fill", false, { page == Page.PLACING }, description = "Only fills lava once it is visible, instead of placing through blocks to reach it")
     val scaffold by setting("Scaffold", true, { page == Page.PLACING }, description = "Tries to bridge / scaffold when stuck placing")
     val placementSearch by setting("Place Deep Search", 2, 1..4, 1, { page == Page.PLACING }, description = "EXPERIMENTAL: Attempts to find a support block for placing against", unit = " blocks")
 
@@ -105,6 +110,7 @@ object HighwayTools : PluginModule(
     val manageFood by setting("Manage Food", true, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Choose to manage food")
     val saveMaterial by setting("Save Material", 12, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many material blocks are saved")
     val saveTools by setting("Save Tools", 1, 0..36, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many tools are saved")
+    val pickaxeAmount by setting("Pickaxe Amount", 1, 1..9, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many pickaxes you need in your inventory. Restocks when below this", unit = " pickaxes")
     val saveEnder by setting("Save Ender Chests", 1, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many ender chests are saved")
     val saveFood by setting("Save Food", 1, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && manageFood && storageManagement}, description = "How many food items are saved")
     val minDistance by setting("Min Container Distance", 1.5, 0.0..3.0, 0.1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Avoid player movement collision with placement.", unit = " blocks")

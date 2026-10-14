@@ -2,4 +2,4 @@ package trombone.blueprint
 
 import net.minecraft.block.Block
 
-data class BlueprintTask(val targetBlock: Block, val isFiller: Boolean = false, val isSupport: Boolean = false)
+data class BlueprintTask(val targetBlock: Block, val isFiller: Boolean = false, val isSupport: Boolean = false, val isCeiling: Boolean = false, val isEdge: Boolean = false)

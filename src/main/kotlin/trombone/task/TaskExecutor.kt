@@ -2,6 +2,7 @@ package trombone.task
 
 import HighwayTools.anonymizeStats
 import HighwayTools.breakDelay
+import HighwayTools.breakDelayMs
 import HighwayTools.debugLevel
 import HighwayTools.dynamicDelay
 import HighwayTools.fakeSounds
@@ -111,7 +112,7 @@ object TaskExecutor {
             && containerTask.isShulker()
             && container.getSlots(0..26).all {
                 it.stack.isEmpty
-                    || InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
+                        || InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
             }
         ) {
             if (debugLevel != IO.DebugLevel.OFF) {
@@ -131,7 +132,7 @@ object TaskExecutor {
 
         val freeSlots = container.getSlots(27..62).count {
             InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
-                || it.stack.isEmpty
+                    || it.stack.isEmpty
         } - 1 - keepFreeSlots
 
         if (containerTask.stopPull || freeSlots < 1) {
@@ -213,6 +214,7 @@ object TaskExecutor {
         if (block == Blocks.AIR) {
             Inventory.waitTicks =
                 breakDelay
+            Inventory.breakReadyTime = System.currentTimeMillis() + breakDelayMs
             blockTask.updateState(TaskState.BROKEN)
             return
         }
@@ -340,7 +342,7 @@ object TaskExecutor {
             fillerMat -> {
                 if (world.getBlockState(blockTask.blockPos.up()).block == material ||
                     (!world.isPlaceable(blockTask.blockPos) &&
-                        world.getCollisionBox(blockTask.blockPos) != null)) {
+                            world.getCollisionBox(blockTask.blockPos) != null)) {
                     blockTask.updateState(TaskState.DONE)
                     return
                 }

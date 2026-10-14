@@ -3,6 +3,7 @@ package trombone.interaction
 import HighwayTools.debugLevel
 import HighwayTools.dynamicDelay
 import HighwayTools.placeDelay
+import HighwayTools.placeDelayMs
 import HighwayTools.taskTimeout
 import com.lambda.client.LambdaMod
 import com.lambda.client.event.SafeClientEvent
@@ -24,6 +25,7 @@ import trombone.IO.DebugLevel
 import trombone.Trombone.module
 import trombone.handler.Container.containerTask
 import trombone.handler.Inventory.lastHitVec
+import trombone.handler.Inventory.placeReadyTime
 import trombone.handler.Inventory.waitTicks
 import trombone.task.BlockTask
 import trombone.task.TaskState
@@ -51,7 +53,7 @@ object Place {
                 placeBlockNormal(blockTask, last.pos, last.side)
             }
 //            else -> {
-                // ToDo: Rewrite deep place
+            // ToDo: Rewrite deep place
 //                blockTask.sequence.forEach {
 //                    addTaskToPending(it.pos, TaskState.PLACE, fillerMat)
 //                }
@@ -68,6 +70,7 @@ object Place {
         } else {
             placeDelay
         }
+        placeReadyTime = System.currentTimeMillis() + placeDelayMs
         blockTask.updateState(TaskState.PENDING_PLACE)
 
         if (currentBlock in blockBlacklist) {

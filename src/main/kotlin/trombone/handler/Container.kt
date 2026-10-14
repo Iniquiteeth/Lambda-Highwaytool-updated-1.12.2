@@ -5,6 +5,7 @@ import HighwayTools.keepFreeSlots
 import HighwayTools.material
 import HighwayTools.maxReach
 import HighwayTools.minDistance
+import HighwayTools.pickaxeAmount
 import HighwayTools.preferEnderChests
 import HighwayTools.saveEnder
 import HighwayTools.saveFood
@@ -48,6 +49,10 @@ object Container {
     val shulkerOpenTimer = TickTimer(TimeUnit.TICKS)
     var grindCycles = 0
 
+    /** True when fewer pickaxes than the "Pickaxe Amount" setting are in the inventory. */
+    fun SafeClientEvent.needsPickaxeRestock(): Boolean =
+        player.inventorySlots.countItem(Items.DIAMOND_PICKAXE) < pickaxeAmount
+
     fun SafeClientEvent.handleRestock(item: Item) {
         if (preferEnderChests && item.block == Blocks.OBSIDIAN) {
             handleEnderChest(item)
@@ -88,7 +93,7 @@ object Container {
                 } else {
                     val freeSlots = player.inventorySlots.count {
                         it.stack.isEmpty
-                            || InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
+                                || InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
                     }
 
                     val cycles = (freeSlots - 1 - keepFreeSlots) * 8
@@ -140,13 +145,13 @@ object Container {
         return VectorUtils.getBlockPosInSphere(origin, maxReach).asSequence()
             .filter { pos ->
                 !isInsideBlueprintBuild(pos)
-                    && pos != currentBlockPos
-                    && world.isPlaceable(pos)
-                    && !world.getBlockState(pos.down()).isReplaceable
-                    && world.isAirBlock(pos.up())
-                    && getVisibleSides(pos.down()).contains(EnumFacing.UP)
-                    && player.positionVector.distanceTo(pos.toVec3dCenter()) > minDistance
-                    && pos.y >= currentBlockPos.y
+                        && pos != currentBlockPos
+                        && world.isPlaceable(pos)
+                        && !world.getBlockState(pos.down()).isReplaceable
+                        && world.isAirBlock(pos.up())
+                        && getVisibleSides(pos.down()).contains(EnumFacing.UP)
+                        && player.positionVector.distanceTo(pos.toVec3dCenter()) > minDistance
+                        && pos.y >= currentBlockPos.y
             }.sortedWith(
                 compareByDescending<BlockPos> {
                     secureScore(it)
@@ -199,8 +204,8 @@ object Container {
                 return VectorUtils.getBlockPosInSphere(itemVec, range).asSequence()
                     .filter { pos ->
                         world.isAirBlock(pos.up())
-                            && world.isAirBlock(pos)
-                            && !world.isPlaceable(pos.down())
+                                && world.isAirBlock(pos)
+                                && !world.isPlaceable(pos.down())
                     }
                     .sortedWith(
                         compareBy<BlockPos> {
@@ -218,7 +223,7 @@ object Container {
         var message = ""
         if (saveMaterial > 0 && item == material.item) message += insufficientMaterialPrint(itemCount, saveMaterial, material.localizedName)
         if (saveEnder > 0 && item.block == Blocks.ENDER_CHEST) message += insufficientMaterialPrint(itemCount, saveEnder, Blocks.ENDER_CHEST.localizedName)
-        if (saveTools > 0 && item == Items.DIAMOND_PICKAXE) message += insufficientMaterialPrint(itemCount, saveTools, "Diamond Pickaxe(s)")
+        if (item == Items.DIAMOND_PICKAXE) message += insufficientMaterialPrint(itemCount, maxOf(saveTools, pickaxeAmount - 1), "Diamond Pickaxe(s)")
         if (saveFood > 0 && item == Items.GOLDEN_APPLE) message += insufficientMaterialPrint(itemCount, saveFood, "Golden Apple(s)")
         return "$message\nTo continue anyways, set setting in ${TextFormatting.GRAY}Storage Management > Save <Material>${TextFormatting.RESET} to zero."
     }

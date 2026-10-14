@@ -1,6 +1,7 @@
 package trombone.interaction
 
 import HighwayTools.breakDelay
+import HighwayTools.breakDelayMs
 import HighwayTools.illegalPlacements
 import HighwayTools.instantMine
 import HighwayTools.interactionLimit
@@ -26,6 +27,7 @@ import net.minecraft.util.EnumFacing
 import net.minecraft.util.EnumHand
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
+import trombone.handler.Inventory.breakReadyTime
 import trombone.handler.Inventory.lastHitVec
 import trombone.handler.Inventory.packetLimiter
 import trombone.handler.Inventory.waitTicks
@@ -82,6 +84,7 @@ object Break {
 
     private fun mineBlockInstant(blockTask: BlockTask, side: EnumFacing) {
         waitTicks = breakDelay
+        breakReadyTime = System.currentTimeMillis() + breakDelayMs
         blockTask.updateState(TaskState.PENDING_BREAK)
 
         defaultScope.launch {
@@ -103,7 +106,7 @@ object Break {
 
             tasks.values.filter {
                 it.taskState == TaskState.BREAK
-                    && it != blockTask
+                        && it != blockTask
             }.forEach { task ->
                 val relativeHardness = world.getBlockState(task.blockPos).getPlayerRelativeBlockHardness(player, world, task.blockPos)
                 if (ceil((1 / relativeHardness) * miningSpeedFactor).ceilToInt() > 1) return@forEach
@@ -145,6 +148,7 @@ object Break {
 
     private fun extinguishFire(blockTask: BlockTask, pos: BlockPos, side: EnumFacing) {
         waitTicks = breakDelay
+        breakReadyTime = System.currentTimeMillis() + breakDelayMs
         blockTask.updateState(TaskState.PENDING_BREAK)
 
         defaultScope.launch {

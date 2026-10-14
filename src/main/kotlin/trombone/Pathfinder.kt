@@ -1,7 +1,12 @@
 package trombone
 
+import HighwayTools.ceiling
+import HighwayTools.material
+import HighwayTools.maxReach
+import HighwayTools.mode
 import HighwayTools.moveSpeed
 import HighwayTools.scaffold
+import HighwayTools.width
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.util.BaritoneUtils
 import com.lambda.client.util.EntityUtils.flooredPosition
@@ -18,10 +23,13 @@ import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import trombone.IO.disableError
 import trombone.Statistics.simpleMovingAverageDistance
+import trombone.Trombone.Structure
 import trombone.Trombone.active
+import trombone.blueprint.BlueprintGenerator.blueprint
 import trombone.handler.Container.containerTask
 import trombone.handler.Container.getCollectingPosition
 import trombone.handler.Inventory.lastHitVec
+import trombone.task.TaskManager.isBaseDone
 import trombone.task.TaskManager.isBehindPos
 import trombone.task.TaskManager.populateTasks
 import trombone.task.TaskManager.tasks
@@ -39,6 +47,12 @@ object Pathfinder {
     private var targetBlockPos = BlockPos(0, -1, 0)
     var distancePending = 0
 
+    /* How many ticks the bot already tried to reach a ceiling block, to not get stuck on unreachable ones */
+    private val ceilingAttempts = HashMap<BlockPos, Int>()
+    private const val CEILING_MAX_ATTEMPTS = 100
+    private var ceilingTarget: BlockPos? = null
+    private var ceilingStandPos: BlockPos? = null
+
     enum class MovementState {
         RUNNING, PICKUP, BRIDGE, RESTOCK
     }
@@ -48,6 +62,110 @@ object Pathfinder {
         startingBlockPos = player.flooredPosition
         currentBlockPos = startingBlockPos
         startingDirection = Direction.fromEntity(player)
+        ceilingAttempts.clear()
+        ceilingTarget = null
+        ceilingStandPos = null
+    }
+
+    /**
+     * Once the highway is built, finds a ceiling block that is missing and can't be worked on from the
+     * current position (out of reach) and returns a spot on the road to stand on to reach it.
+     *
+     * The bot stays on that spot until every ceiling task is done and only then walks on, so it
+     * doesn't run back and forth between the centre of the road and the edges.
+     */
+    private fun SafeClientEvent.getCeilingStandPos(): BlockPos? {
+        if (!ceiling || mode != Structure.HIGHWAY || !isBaseDone()) {
+            ceilingTarget = null
+            ceilingStandPos = null
+            return null
+        }
+
+        /* Stick to the current target until it is built (or given up on) */
+        ceilingTarget?.let { target ->
+            val attempts = (ceilingAttempts[target] ?: 0) + 1
+            ceilingAttempts[target] = attempts
+
+            if (isCeilingMissing(target) && attempts < CEILING_MAX_ATTEMPTS) return ceilingStandPos
+
+            ceilingTarget = null
+        }
+
+        val eyePos = player.getPositionEyes(1f)
+        val nextPos = currentBlockPos.add(startingDirection.directionVec).up()
+        val startPad = startingBlockPos.add(startingDirection.directionVec)
+        val tooFarBack = currentBlockPos.subtract(startingDirection.directionVec.multiply(3))
+
+        val candidates = blueprint.entries.asSequence()
+            .filter { (pos, blueprintTask) ->
+                blueprintTask.isCeiling
+                        && (ceilingAttempts[pos] ?: 0) < CEILING_MAX_ATTEMPTS
+                        && isBehindPos(nextPos, pos)
+                        && !isBehindPos(tooFarBack, pos)
+                        && !isBehindPos(startPad, pos)
+                        && currentBlockPos.distanceTo(pos) <= width + 3
+                        && isCeilingMissing(pos)
+                        && tasks[pos].let { task ->
+                    task == null
+                            || task.taskState == TaskState.IMPOSSIBLE_PLACE
+                            || (task.taskState == TaskState.PLACE && task.sequence.isEmpty())
+                }
+            }
+            .map { it.key }
+            .sortedBy { eyePos.distanceTo(it.toVec3dCenter()) }
+
+        for (target in candidates) {
+            val standPos = findStandPos(target)
+
+            if (standPos == null) {
+                ceilingAttempts[target] = CEILING_MAX_ATTEMPTS
+                continue
+            }
+
+            ceilingTarget = target
+            ceilingStandPos = standPos
+            ceilingAttempts[target] = 1
+            return standPos
+        }
+
+        /* Nothing left that is out of reach: stay put until the remaining tasks are finished */
+        if (!isIdle()) return ceilingStandPos
+
+        ceilingStandPos = null
+        return null
+    }
+
+    private fun SafeClientEvent.isCeilingMissing(pos: BlockPos) =
+        world.getBlockState(pos).let {
+            it.block != material && it.getBlockHardness(world, pos) >= 0
+        }
+
+    /* No task is waiting for or doing something right now */
+    private fun isIdle() = tasks.values.none {
+        it.taskState != TaskState.DONE
+                && it.taskState != TaskState.IMPOSSIBLE_PLACE
+                && !(it.taskState == TaskState.PLACE && it.sequence.isEmpty())
+    }
+
+    /* A free spot at feet level below the target. Rails are in the way at the edges, so step inwards. */
+    private fun SafeClientEvent.findStandPos(target: BlockPos): BlockPos? {
+        val base = BlockPos(target.x, currentBlockPos.y, target.z)
+        val sx = Integer.signum(currentBlockPos.x - target.x)
+        val sz = Integer.signum(currentBlockPos.z - target.z)
+
+        return listOf(
+            base,
+            base.add(sx, 0, 0),
+            base.add(0, 0, sz),
+            base.add(sx, 0, sz),
+            base.add(sx * 2, 0, 0),
+            base.add(0, 0, sz * 2),
+            base.add(sx * 2, 0, sz * 2)
+        ).firstOrNull {
+            world.isAirBlock(it)
+                    && world.isAirBlock(it.up())
+                    && !world.getBlockState(it.down()).isReplaceable
+        }
     }
 
     fun SafeClientEvent.updatePathing() {
@@ -58,10 +176,16 @@ object Pathfinder {
                 // ToDo: Rewrite
                 if (currentBlockPos.distanceTo(targetBlockPos) < 2 ||
                     (distancePending > 0 &&
-                        startingBlockPos.add(
-                            startingDirection.directionVec.multiply(distancePending)
-                        ).distanceTo(currentBlockPos) == 0.0)) {
+                            startingBlockPos.add(
+                                startingDirection.directionVec.multiply(distancePending)
+                            ).distanceTo(currentBlockPos) == 0.0)) {
                     disableError("Reached target destination")
+                    return
+                }
+
+                /* Walk to the part of the road needed to reach the ceiling */
+                getCeilingStandPos()?.let {
+                    goal = it
                     return
                 }
 
@@ -115,31 +239,36 @@ object Pathfinder {
 
     private fun checkForResidue(pos: BlockPos) =
         containerTask.taskState == TaskState.DONE
-            && tasks.values.all {
-                it.taskState == TaskState.DONE || !isBehindPos(pos, it.blockPos)
-            }
+                && tasks.values.all {
+            it.taskState == TaskState.DONE
+                    || !isBehindPos(pos, it.blockPos)
+                    /* a ceiling block that can't be placed must not hold the bot back */
+                    || (it.taskState == TaskState.IMPOSSIBLE_PLACE && blueprint[it.blockPos]?.isCeiling == true)
+        }
 
     private fun SafeClientEvent.isTaskDone(pos: BlockPos): Boolean {
         val block = world.getBlockState(pos).block
         return tasks[pos]?.let {
             it.taskState == TaskState.DONE
-                && block != Blocks.PORTAL
-                && block != Blocks.END_PORTAL
-                && block !is BlockLiquid
+                    && block != Blocks.PORTAL
+                    && block != Blocks.END_PORTAL
+                    && block !is BlockLiquid
         } ?: false
     }
 
     fun SafeClientEvent.shouldBridge(): Boolean {
         return scaffold
-            && containerTask.taskState == TaskState.DONE
-            && world.isAirBlock(currentBlockPos.add(startingDirection.directionVec))
-            && world.isAirBlock(currentBlockPos.add(startingDirection.directionVec).up())
-            && world.getBlockState(currentBlockPos.add(startingDirection.directionVec).down()).isReplaceable
-            && tasks.values.none { it.taskState == TaskState.PENDING_PLACE }
-            && tasks.values.filter {
-                it.taskState == TaskState.PLACE
-                    || it.taskState == TaskState.LIQUID
-            }.none { it.sequence.isNotEmpty() }
+                && containerTask.taskState == TaskState.DONE
+                && world.isAirBlock(currentBlockPos.add(startingDirection.directionVec))
+                && world.isAirBlock(currentBlockPos.add(startingDirection.directionVec).up())
+                && world.getBlockState(currentBlockPos.add(startingDirection.directionVec).down()).isReplaceable
+                && tasks.values.none { it.taskState == TaskState.PENDING_PLACE }
+                && tasks.values.filter {
+            (it.taskState == TaskState.PLACE
+                    || it.taskState == TaskState.LIQUID)
+                    /* ceiling tasks wait for the floor, so they must not block bridging */
+                    && blueprint[it.blockPos]?.isCeiling != true
+        }.none { it.sequence.isNotEmpty() }
     }
 
     private fun SafeClientEvent.moveTo(target: Vec3d) {

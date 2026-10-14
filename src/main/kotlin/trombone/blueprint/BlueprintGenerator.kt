@@ -1,6 +1,8 @@
 package trombone.blueprint
 
 import HighwayTools.backfill
+import HighwayTools.ceiling
+import HighwayTools.ceilingHeight
 import HighwayTools.cleanCorner
 import HighwayTools.cleanFloor
 import HighwayTools.cleanLeftWall
@@ -58,6 +60,7 @@ object BlueprintGenerator {
                 }
             } else {
                 generateBase(thisPos, xDirection)
+                if (ceiling) generateCeiling(thisPos, xDirection)
             }
         }
 
@@ -77,8 +80,11 @@ object BlueprintGenerator {
     }
 
     private fun generateClear(basePos: BlockPos, xDirection: Direction) {
+        // With a ceiling, only clear below the ceiling layer so both don't fight over the same blocks
+        val clearHeight = if (mode == Structure.HIGHWAY && ceiling) minOf(height, ceilingHeight) else height
+
         for (w in 0 until width) {
-            for (h in 0 until height) {
+            for (h in 0 until clearHeight) {
                 val x = w - width / 2
                 val pos = basePos.add(xDirection.directionVec.multiply(x)).up(h)
 
@@ -109,6 +115,14 @@ object BlueprintGenerator {
             } else {
                 blueprint[pos] = BlueprintTask(material)
             }
+        }
+    }
+
+    private fun generateCeiling(basePos: BlockPos, xDirection: Direction) {
+        for (w in 0 until width) {
+            val x = w - width / 2
+            val pos = basePos.add(xDirection.directionVec.multiply(x)).up(ceilingHeight)
+            blueprint[pos] = BlueprintTask(material, isCeiling = true, isEdge = w == 0 || w == width - 1)
         }
     }
 

@@ -48,6 +48,7 @@ import trombone.blueprint.BlueprintTask
 import trombone.handler.Container.containerTask
 import trombone.handler.Container.grindCycles
 import trombone.handler.Container.handleRestock
+import trombone.handler.Liquid.isHiddenLava
 import trombone.handler.Inventory.waitTicks
 import trombone.interaction.Place.extraPlaceDelay
 import trombone.task.TaskExecutor.doTask
@@ -70,7 +71,7 @@ object TaskManager {
         /* Remove old tasks */
         tasks.filter {
             it.value.taskState == TaskState.DONE
-                && currentBlockPos.distanceTo(it.key) > maxReach + 2
+                    && currentBlockPos.distanceTo(it.key) > maxReach + 2
         }.forEach {
             if (it.value.toRemove) {
                 if (System.currentTimeMillis() - it.value.timestamp > 1000L) tasks.remove(it.key)
@@ -101,11 +102,20 @@ object TaskManager {
                 addTask(blockTask, blueprintTask)
             }
 
+            /* unbreakable blocks (bedrock, barriers, ...) can't be mined or replaced */
+            currentState.getBlockHardness(world, blockPos) < 0 -> {
+                val blockTask = BlockTask(blockPos, TaskState.DONE, currentState.block)
+                addTask(blockTask, blueprintTask)
+            }
+
             /* is in desired state */
             currentState.block == blueprintTask.targetBlock -> {
                 val blockTask = BlockTask(blockPos, TaskState.DONE, currentState.block)
                 addTask(blockTask, blueprintTask)
             }
+
+            /* lava that can't be seen yet, wait until the blocks in front are mined */
+            currentState.block is BlockLiquid && isHiddenLava(blockPos) -> { /* Ignore task */ }
 
             /* is liquid */
             currentState.block is BlockLiquid -> {
@@ -183,15 +193,15 @@ object TaskManager {
 
             /* Check tools */
             storageManagement
-                && player.inventorySlots.countItem<ItemPickaxe>() <= saveTools -> {
+                    && player.inventorySlots.countItem<ItemPickaxe>() <= saveTools -> {
                 // TODO: ItemPickaxe support
                 handleRestock(Items.DIAMOND_PICKAXE)
             }
 
             /* Fulfill basic needs */
             storageManagement
-                && manageFood
-                && player.inventorySlots.countItem<ItemFood>() <= saveFood -> {
+                    && manageFood
+                    && player.inventorySlots.countItem<ItemFood>() <= saveFood -> {
                 // TODO: ItemFood support
                 handleRestock(food)
             }
@@ -213,8 +223,25 @@ object TaskManager {
                     if (multiBuilding) it.shuffle()
                 }
 
+                /*
+                 * One mining sequence for everything (highway, clearing and the ceiling layer),
+                 * then the highway gets placed and only after that the ceiling.
+                 * Mining tasks are never held back, only placing the ceiling is.
+                 */
+                val baseDone = isBaseDone()
+                val ceilingMining = tasks.values.any {
+                    isCeilingTask(it)
+                            && (it.taskState == TaskState.BREAK
+                            || it.taskState == TaskState.BREAKING
+                            || it.taskState == TaskState.PENDING_BREAK)
+                }
+
                 sortedTasks.clear()
-                sortedTasks.addAll(tasks.values)
+                sortedTasks.addAll(tasks.values.filter {
+                    !isCeilingTask(it)
+                            || it.taskState != TaskState.PLACE
+                            || (baseDone && !ceilingMining)
+                })
 
                 sortedTasks.forEach taskExecution@{ task ->
                     if (!checkStuckTimeout(task)) return
@@ -230,6 +257,15 @@ object TaskManager {
         }
     }
 
+    fun isCeilingTask(blockTask: BlockTask) = blueprint[blockTask.blockPos]?.isCeiling == true
+
+    /* Everything except the ceiling is finished (blocks that can't be placed don't count) */
+    fun isBaseDone() = tasks.values.none {
+        !isCeilingTask(it)
+                && it.taskState != TaskState.DONE
+                && it.taskState != TaskState.IMPOSSIBLE_PLACE
+    }
+
     fun SafeClientEvent.addTask(blockTask: BlockTask, blueprintTask: BlueprintTask) {
         blockTask.updateTask(this)
         blockTask.isFiller = blueprintTask.isFiller
@@ -239,11 +275,11 @@ object TaskManager {
             if (it.stuckTicks > it.taskState.stuckTimeout
                 || blockTask.taskState == TaskState.LIQUID
                 || (it.taskState != blockTask.taskState
-                    && (it.taskState == TaskState.DONE
-                    || it.taskState == TaskState.IMPOSSIBLE_PLACE
-                    || (it.taskState == TaskState.PLACE
-                    && !world.isPlaceable(it.blockPos)
-        )))) {
+                        && (it.taskState == TaskState.DONE
+                        || it.taskState == TaskState.IMPOSSIBLE_PLACE
+                        || (it.taskState == TaskState.PLACE
+                        && !world.isPlaceable(it.blockPos)
+                        )))) {
                 tasks[blockTask.blockPos] = blockTask
             }
         } ?: run {
@@ -303,8 +339,8 @@ object TaskManager {
 
     private fun shouldBeIgnored(blockPos: BlockPos, currentState: IBlockState) =
         ignoreBlocks.contains(currentState.block.registryName.toString())
-            && !isInsideBlueprintBuild(blockPos)
-            && currentBlockPos.add(startingDirection.directionVec) != blockPos
+                && !isInsideBlueprintBuild(blockPos)
+                && currentBlockPos.add(startingDirection.directionVec) != blockPos
 
     fun clearTasks() {
         tasks.clear()

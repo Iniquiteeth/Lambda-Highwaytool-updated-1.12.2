@@ -36,6 +36,10 @@ object Inventory {
     var lastHitVec: Vec3d = Vec3d.ZERO
     var waitTicks = 0
 
+    /* Millisecond based delays, they run next to the tick based ones */
+    var placeReadyTime = 0L
+    var breakReadyTime = 0L
+
     val packetLimiter = ConcurrentLinkedDeque<Long>()
 
     @Suppress("UNUSED")
@@ -158,7 +162,7 @@ object Inventory {
     fun SafeClientEvent.zipInventory() {
         val compressibleStacks = player.inventorySlots.filter { comp ->
             comp.stack.count < comp.stack.maxStackSize
-                && player.inventorySlots.countByStack { comp.stack.item == it.item } > 1
+                    && player.inventorySlots.countByStack { comp.stack.item == it.item } > 1
         }
 
         if (compressibleStacks.isEmpty()) {
@@ -190,7 +194,7 @@ object Inventory {
     fun SafeClientEvent.moveToInventory(originSlot: Slot, container: Container) {
         container.getSlots(27..62).firstOrNull {
             originSlot.stack.item == it.stack.item
-                && it.stack.count < originSlot.stack.maxStackSize - originSlot.stack.count
+                    && it.stack.count < originSlot.stack.maxStackSize - originSlot.stack.count
         }?.let { _ ->
             module.addInventoryTask(
                 PlayerInventoryManager.ClickInfo(
@@ -203,7 +207,7 @@ object Inventory {
         } ?: run {
             container.getSlots(54..62).firstOrNull {
                 InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
-                    || it.stack.isEmpty
+                        || it.stack.isEmpty
             }?.let { freeHotbarSlot ->
                 module.addInventoryTask(
                     PlayerInventoryManager.ClickInfo(
@@ -216,7 +220,7 @@ object Inventory {
             } ?: run {
                 container.getSlots(27..53).firstOrNull {
                     InventoryManager.ejectList.contains(it.stack.item.registryName.toString())
-                        || it.stack.isEmpty
+                            || it.stack.isEmpty
                 }?.let { freeSlot ->
                     module.addInventoryTask(
                         PlayerInventoryManager.ClickInfo(
@@ -242,7 +246,7 @@ object Inventory {
     fun SafeClientEvent.getEjectSlot(): Slot? {
         return player.inventorySlots.firstByStack {
             !it.isEmpty &&
-                InventoryManager.ejectList.contains(it.item.registryName.toString())
+                    InventoryManager.ejectList.contains(it.item.registryName.toString())
         }
     }
 }

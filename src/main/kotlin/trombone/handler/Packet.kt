@@ -22,7 +22,7 @@ object Packet {
         when (packet) {
             is SPacketBlockChange -> {
                 val pos = packet.blockPosition
-                if (!isInsideBlueprint(pos)) return
+                if (!isInsideBlueprint(pos) && !tasks.containsKey(pos)) return
 
                 val prev = world.getBlockState(pos).block
                 val new = packet.blockState.block
