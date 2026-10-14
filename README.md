@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <img src="https://cdn.discordapp.com/attachments/669533180310716416/748810374748307476/output-onlinepngtools.png" width="100%"/>
 
 ### Description
@@ -78,3 +79,6 @@ Report bugs on [Issues](https://github.com/lambda-plugins/HighwayTools/issues) a
 `Copyright ©2019-2022` Constructor#9948 alias Avanatiker. All Rights Reserved. Permission to use, copy, modify, and distribute this software and its documentation for educational, research, and not-for-profit purposes, without fee and without a signed licensing agreement, is hereby granted, provided that the above copyright notice, this paragraph appears in all copies, modifications, and distributions.
 
 By downloading this software you agree to be bound by the terms of service.
+=======
+boop
+>>>>>>> 43492a227853f01fab72c60ee8274891c599ceeb
