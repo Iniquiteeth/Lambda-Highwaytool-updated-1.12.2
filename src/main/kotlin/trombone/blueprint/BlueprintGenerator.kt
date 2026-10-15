@@ -17,6 +17,7 @@ import HighwayTools.maxReach
 import HighwayTools.mode
 import HighwayTools.railing
 import HighwayTools.railingHeight
+import HighwayTools.wallOff
 import HighwayTools.width
 import com.lambda.client.commons.extension.ceilToInt
 import com.lambda.client.commons.extension.floorToInt
@@ -61,6 +62,7 @@ object BlueprintGenerator {
             } else {
                 generateBase(thisPos, xDirection)
                 if (ceiling) generateCeiling(thisPos, xDirection)
+                if (ceiling && wallOff) generateWall(thisPos, xDirection)
             }
         }
 
@@ -119,10 +121,26 @@ object BlueprintGenerator {
     }
 
     private fun generateCeiling(basePos: BlockPos, xDirection: Direction) {
-        for (w in 0 until width) {
+        /* With Wall Off the ceiling sticks out one block on each side to hang the wall from */
+        val first = if (wallOff) -1 else 0
+        val last = if (wallOff) width else width - 1
+
+        for (w in first..last) {
             val x = w - width / 2
             val pos = basePos.add(xDirection.directionVec.multiply(x)).up(ceilingHeight)
-            blueprint[pos] = BlueprintTask(material, isCeiling = true, isEdge = w == 0 || w == width - 1)
+            blueprint[pos] = BlueprintTask(material, isCeiling = true, isEdge = w == first || w == last)
+        }
+    }
+
+    /* Hangs a two block high wall down from the overhanging ceiling edge on both sides */
+    private fun generateWall(basePos: BlockPos, xDirection: Direction) {
+        for (w in setOf(-1, width)) {
+            val x = w - width / 2
+            val pos = basePos.add(xDirection.directionVec.multiply(x))
+
+            for (y in ceilingHeight - 2 until ceilingHeight) {
+                blueprint[pos.up(y)] = BlueprintTask(material, isWall = true)
+            }
         }
     }
 

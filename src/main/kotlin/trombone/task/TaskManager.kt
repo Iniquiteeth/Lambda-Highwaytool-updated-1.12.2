@@ -9,9 +9,10 @@ import HighwayTools.manageFood
 import HighwayTools.material
 import HighwayTools.maxReach
 import HighwayTools.multiBuilding
+import HighwayTools.raytrace
 import HighwayTools.saveFood
-import HighwayTools.saveTools
 import HighwayTools.storageManagement
+import HighwayTools.wallOff
 import HighwayTools.width
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.manager.managers.PlayerInventoryManager
@@ -31,6 +32,7 @@ import net.minecraft.init.Blocks
 import net.minecraft.init.Items
 import net.minecraft.item.ItemFood
 import net.minecraft.item.ItemPickaxe
+import net.minecraft.util.EnumFacing
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
@@ -41,6 +43,7 @@ import trombone.IO.DebugLevel
 import trombone.Pathfinder.MovementState
 import trombone.Pathfinder.currentBlockPos
 import trombone.Pathfinder.moveState
+import trombone.Pathfinder.skipped
 import trombone.Pathfinder.startingBlockPos
 import trombone.Pathfinder.startingDirection
 import trombone.Trombone.module
@@ -48,6 +51,7 @@ import trombone.blueprint.BlueprintTask
 import trombone.handler.Container.containerTask
 import trombone.handler.Container.grindCycles
 import trombone.handler.Container.handleRestock
+import trombone.handler.Container.needsPickaxeRestock
 import trombone.handler.Liquid.isHiddenLava
 import trombone.handler.Inventory.waitTicks
 import trombone.interaction.Place.extraPlaceDelay
@@ -67,6 +71,24 @@ object TaskManager {
         blueprint.forEach { (pos, blueprintTask) ->
             generateTask(pos, blueprintTask)
         }
+
+        /*
+         * Ceiling / wall blocks that wandered out of reach while the bot moved: drop them, they are
+         * created again with fresh reach and faces once they are back in range.
+         */
+        val eyePos = player.getPositionEyes(1f)
+        tasks.filter { (pos, task) ->
+            (isCeilingTask(task) || isWallTask(task))
+                    && (task.taskState == TaskState.PLACE || task.taskState == TaskState.IMPOSSIBLE_PLACE)
+                    && eyePos.distanceTo(pos.toVec3dCenter()) >= maxReach + 1
+        }.keys.forEach { tasks.remove(it) }
+
+        /* Support blocks (they are not part of the blueprint) that wandered out of reach: drop them */
+        tasks.filter { (pos, task) ->
+            blueprint[pos] == null
+                    && task.taskState != TaskState.DONE
+                    && eyePos.distanceTo(pos.toVec3dCenter()) >= maxReach + 1
+        }.keys.forEach { tasks.remove(it) }
 
         /* Remove old tasks */
         tasks.filter {
@@ -90,6 +112,9 @@ object TaskManager {
             /* start padding */
             startPadding(blockPos) -> { /* Ignore task */ }
 
+            /* given up on after a stall */
+            blockPos in skipped -> { /* Ignore task */ }
+
             /* out of reach */
             eyePos.distanceTo(blockPos.toVec3dCenter()) >= maxReach + 1 -> { /* Ignore task */ }
 
@@ -106,6 +131,25 @@ object TaskManager {
             currentState.getBlockHardness(world, blockPos) < 0 -> {
                 val blockTask = BlockTask(blockPos, TaskState.DONE, currentState.block)
                 addTask(blockTask, blueprintTask)
+            }
+
+            /*
+             * A different block in a ceiling spot while the wall below it is already up: it is mostly a
+             * support block, leave it alone. Also drops a mining attempt that was already queued for it.
+             */
+            wallOff
+                    && blueprintTask.isCeiling
+                    && currentState.block != blueprintTask.targetBlock
+                    && currentState.block != Blocks.AIR
+                    && !currentState.isReplaceable
+                    && world.getBlockState(blockPos.down()).block == material
+                    && world.getBlockState(blockPos.down(2)).block == material -> {
+                if (tasks[blockPos]?.taskState != TaskState.DONE) {
+                    val blockTask = BlockTask(blockPos, TaskState.DONE, currentState.block)
+                    blockTask.updateTask(this)
+                    blockTask.isFiller = blueprintTask.isFiller
+                    tasks[blockPos] = blockTask
+                }
             }
 
             /* is in desired state */
@@ -151,6 +195,20 @@ object TaskManager {
                 } else {
                     blockTask.updateState(TaskState.IMPOSSIBLE_PLACE)
                     addTask(blockTask, blueprintTask)
+
+                    /*
+                     * Diagonal wall off: nothing visible to place this block on. Then, and only then, a single
+                     * support block is placed next to it first (no extra layer is planned).
+                     */
+                    if (raytrace
+                        && wallOff
+                        && startingDirection.isDiagonal
+                        && (blueprintTask.isWall || blueprintTask.isCeiling)
+                        && isBaseDone()
+                        && (!blueprintTask.isWall || !wallWaitsForCeiling(blockTask))
+                    ) {
+                        requestSupport(blockPos)
+                    }
                 }
             }
 
@@ -169,6 +227,39 @@ object TaskManager {
                 if (blockTask.eyeDistance < maxReach) {
                     addTask(blockTask, blueprintTask)
                 }
+            }
+        }
+    }
+
+    /**
+     * The block at [target] has no visible face to be placed on. Looks for an empty spot next to it that
+     * is not part of the structure (so not the road, the railing or the wall itself) and that can be
+     * placed on an existing block, and queues one support block there. The target is then placed against
+     * that support on a following tick.
+     */
+    private fun SafeClientEvent.requestSupport(target: BlockPos) {
+        val eyePos = player.getPositionEyes(1f)
+
+        val candidates = EnumFacing.values().map { target.offset(it) }.filter { pos ->
+            blueprint[pos] == null
+                    && pos != containerTask.blockPos
+                    && world.isAirBlock(pos)
+                    && world.isPlaceable(pos)
+                    && world.checkNoEntityCollision(AxisAlignedBB(pos), null)
+                    && eyePos.distanceTo(pos.toVec3dCenter()) < maxReach
+        }.sortedBy { eyePos.distanceTo(it.toVec3dCenter()) }
+
+        for (pos in candidates) {
+            /* One is already on its way */
+            val existing = tasks[pos]
+            if (existing != null && existing.taskState != TaskState.DONE) return
+
+            val supportTask = BlockTask(pos, TaskState.PLACE, material)
+            supportTask.updateTask(this)
+
+            if (supportTask.sequence.isNotEmpty()) {
+                tasks[pos] = supportTask
+                return
             }
         }
     }
@@ -193,8 +284,7 @@ object TaskManager {
 
             /* Check tools */
             storageManagement
-                    && player.inventorySlots.countItem<ItemPickaxe>() <= saveTools -> {
-                // TODO: ItemPickaxe support
+                    && needsPickaxeRestock() -> {
                 handleRestock(Items.DIAMOND_PICKAXE)
             }
 
@@ -224,23 +314,20 @@ object TaskManager {
                 }
 
                 /*
-                 * One mining sequence for everything (highway, clearing and the ceiling layer),
-                 * then the highway gets placed and only after that the ceiling.
-                 * Mining tasks are never held back, only placing the ceiling is.
+                 * Mining tasks always run first (they sort before placing), so there is no reason to hold
+                 * the ceiling and wall back while something is still being mined. They only wait for the
+                 * highway blocks that are being placed.
                  */
                 val baseDone = isBaseDone()
-                val ceilingMining = tasks.values.any {
-                    isCeilingTask(it)
-                            && (it.taskState == TaskState.BREAK
-                            || it.taskState == TaskState.BREAKING
-                            || it.taskState == TaskState.PENDING_BREAK)
-                }
 
                 sortedTasks.clear()
                 sortedTasks.addAll(tasks.values.filter {
-                    !isCeilingTask(it)
+                    (!isCeilingTask(it)
                             || it.taskState != TaskState.PLACE
-                            || (baseDone && !ceilingMining)
+                            || baseDone)
+                            && (!isWallTask(it)
+                            || it.taskState != TaskState.PLACE
+                            || (baseDone && !wallWaitsForCeiling(it)))
                 })
 
                 sortedTasks.forEach taskExecution@{ task ->
@@ -259,11 +346,34 @@ object TaskManager {
 
     fun isCeilingTask(blockTask: BlockTask) = blueprint[blockTask.blockPos]?.isCeiling == true
 
-    /* Everything except the ceiling is finished (blocks that can't be placed don't count) */
+    fun isWallTask(blockTask: BlockTask) = blueprint[blockTask.blockPos]?.isWall == true
+
+    /* A wall block waits while the ceiling block above it is still being worked on */
+    private fun wallWaitsForCeiling(blockTask: BlockTask): Boolean {
+        var pos = blockTask.blockPos
+        for (i in 1..6) {
+            pos = pos.up()
+            if (blueprint[pos]?.isCeiling == true) {
+                val ceilingTask = tasks[pos] ?: return false
+                return ceilingTask.taskState != TaskState.DONE
+                        && ceilingTask.taskState != TaskState.IMPOSSIBLE_PLACE
+            }
+        }
+        return false
+    }
+
+    /*
+     * No highway block (floor, railing) is waiting to be placed. Mining does not count: it never blocks the
+     * ceiling / wall, and a block that can't be mined must not keep them from being built.
+     */
     fun isBaseDone() = tasks.values.none {
         !isCeilingTask(it)
-                && it.taskState != TaskState.DONE
-                && it.taskState != TaskState.IMPOSSIBLE_PLACE
+                && !isWallTask(it)
+                && when (it.taskState) {
+            TaskState.PLACE -> it.sequence.isNotEmpty()
+            TaskState.PENDING_PLACE, TaskState.LIQUID -> true
+            else -> false
+        }
     }
 
     fun SafeClientEvent.addTask(blockTask: BlockTask, blueprintTask: BlueprintTask) {
@@ -277,6 +387,8 @@ object TaskManager {
                 || (it.taskState != blockTask.taskState
                         && (it.taskState == TaskState.DONE
                         || it.taskState == TaskState.IMPOSSIBLE_PLACE
+                        /* lost its visible face (Raytrace): don't leave it hanging in PLACE */
+                        || (it.taskState == TaskState.PLACE && it.sequence.isEmpty())
                         || (it.taskState == TaskState.PLACE
                         && !world.isPlaceable(it.blockPos)
                         )))) {

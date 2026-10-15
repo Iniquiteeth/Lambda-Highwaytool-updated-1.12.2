@@ -65,6 +65,7 @@ object HighwayTools : PluginModule(
     val cleanRoof by setting("Clean Roof", false, { page == Page.BLUEPRINT && mode == Structure.TUNNEL && !backfill }, description = "Cleans up the tunnels roof")
     val cleanCorner by setting("Clean Corner", false, { page == Page.BLUEPRINT && mode == Structure.TUNNEL && !cornerBlock && !backfill && width > 2 }, description = "Cleans up the tunnels corner")
     val cornerBlock by setting("Corner Block", false, { page == Page.BLUEPRINT && (mode == Structure.HIGHWAY || (mode == Structure.TUNNEL && !backfill && width > 2)) }, description = "If activated will break the corner in tunnel or place a corner while paving")
+    val wallOff by setting("Wall Off", false, { page == Page.BLUEPRINT && mode == Structure.HIGHWAY && ceiling }, description = "Extends the ceiling one block on each side and hangs a two block high wall below it")
     val railing by setting("Railing", true, { page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Adds a railing/rim/border to the highway")
     val railingHeight by setting("Railing Height", 1, 1..4, 1, { railing && page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Sets height of railing", unit = " blocks")
     val ceiling by setting("Ceiling", false, { page == Page.BLUEPRINT && mode == Structure.HIGHWAY }, description = "Adds a ceiling on top of the highway")
@@ -79,6 +80,8 @@ object HighwayTools : PluginModule(
     val multiBuilding by setting("Shuffle Tasks", false, { page == Page.PLACING }, description = "Only activate when working with several players")
     val rubberbandTimeout by setting("Rubberband Timeout", 50, 5..100, 5, { page == Page.BEHAVIOR }, description = "Timeout for pausing after a lag")
     val taskTimeout by setting("Task Timeout", 8, 0..20, 1, { page == Page.BEHAVIOR }, description = "Timeout for waiting for the server to try again", unit = " ticks")
+    val baritonePath by setting("Toggle Baritone Path", true, { page == Page.BEHAVIOR }, description = "Lets the bot walk and steer you. Turn off to walk and move yourself while it keeps placing and breaking")
+    val refreshTimeout by setting("Refresh Timeout", 15, 1..30, 1, { page == Page.BEHAVIOR }, description = "Seconds without progress before the bot moves to the middle of the road and refreshes its tasks", unit = " s")
     val moveSpeed by setting("Packet Move Speed", 0.2f, 0.0f..1.0f, 0.01f, { page == Page.BEHAVIOR }, description = "Maximum player velocity per tick", unit = "m/t")
 
     // mining
@@ -94,10 +97,11 @@ object HighwayTools : PluginModule(
     val placeDelay by setting("Place Delay", 3, 1..20, 1, { page == Page.PLACING }, description = "Sets the delay ticks between placement tasks", unit = " ticks")
     val placeDelayMs by setting("Place Delay MS", 0, 0..1000, 5, { page == Page.PLACING }, description = "Extra delay in milliseconds between placement tasks. Both delays must pass (the bot acts once per tick, 50 ms)", unit = " ms")
     val dynamicDelay by setting("Dynamic Place Delay", true, { page == Page.PLACING }, description = "Slows down on failed placement attempts")
+    val raytrace by setting("Raytrace", true, { page == Page.PLACING }, description = "Only places against a block face that is visible from your eyes, so NCP doesn't block the placement")
     val illegalPlacements by setting("Illegal Placements", false, { page == Page.PLACING }, description = "Do not use on 2b2t. Tries to interact with invisible surfaces")
     val lavaBeforeFill by setting("Lava Before Fill", false, { page == Page.PLACING }, description = "Only fills lava once it is visible, instead of placing through blocks to reach it")
     val scaffold by setting("Scaffold", true, { page == Page.PLACING }, description = "Tries to bridge / scaffold when stuck placing")
-    val placementSearch by setting("Place Deep Search", 2, 1..4, 1, { page == Page.PLACING }, description = "EXPERIMENTAL: Attempts to find a support block for placing against", unit = " blocks")
+    val placementSearch by setting("Place Deep Search", 2, 1..5, 1, { page == Page.PLACING }, description = "EXPERIMENTAL: Attempts to find a support block for placing against", unit = " blocks")
 
     // storage management
     val storageManagement by setting("Manage Storage", true, { page == Page.STORAGE_MANAGEMENT }, description = "Choose to interact with container using only packets")
@@ -109,8 +113,7 @@ object HighwayTools : PluginModule(
     val preferEnderChests by setting("Prefer Ender Chests", false, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Prevent using raw material shulkers")
     val manageFood by setting("Manage Food", true, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Choose to manage food")
     val saveMaterial by setting("Save Material", 12, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many material blocks are saved")
-    val saveTools by setting("Save Tools", 1, 0..36, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many tools are saved")
-    val pickaxeAmount by setting("Pickaxe Amount", 1, 1..9, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many pickaxes you need in your inventory. Restocks when below this", unit = " pickaxes")
+    val pickaxeAmount by setting("Pickaxe Amount", 1, 1..9, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Pickaxes to keep in your inventory. Restocks only when you have fewer than this", unit = " pickaxes")
     val saveEnder by setting("Save Ender Chests", 1, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "How many ender chests are saved")
     val saveFood by setting("Save Food", 1, 0..64, 1, { page == Page.STORAGE_MANAGEMENT && manageFood && storageManagement}, description = "How many food items are saved")
     val minDistance by setting("Min Container Distance", 1.5, 0.0..3.0, 0.1, { page == Page.STORAGE_MANAGEMENT && storageManagement }, description = "Avoid player movement collision with placement.", unit = " blocks")

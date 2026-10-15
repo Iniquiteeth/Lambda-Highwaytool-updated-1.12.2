@@ -3,7 +3,6 @@ package trombone.handler
 import HighwayTools.keepFreeSlots
 import HighwayTools.material
 import HighwayTools.saveMaterial
-import HighwayTools.saveTools
 import HighwayTools.storageManagement
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.manager.managers.PlayerInventoryManager
@@ -28,6 +27,7 @@ import trombone.Trombone.module
 import trombone.handler.Container.containerTask
 import trombone.handler.Container.getShulkerWith
 import trombone.handler.Container.handleRestock
+import trombone.handler.Container.needsPickaxeRestock
 import trombone.task.BlockTask
 import trombone.task.TaskState
 import java.util.concurrent.ConcurrentLinkedDeque
@@ -147,7 +147,7 @@ object Inventory {
     }
 
     fun SafeClientEvent.swapOrMoveBestTool(blockTask: BlockTask): Boolean {
-        if (player.inventorySlots.countItem(Items.DIAMOND_PICKAXE) <= saveTools) {
+        if (needsPickaxeRestock()) {
             return if (containerTask.taskState == TaskState.DONE && storageManagement) {
                 handleRestock(Items.DIAMOND_PICKAXE)
                 false

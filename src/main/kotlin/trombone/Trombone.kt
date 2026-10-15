@@ -8,6 +8,7 @@ import trombone.BaritoneHelper.setupBaritone
 import trombone.IO.pauseCheck
 import trombone.IO.printDisable
 import trombone.IO.printEnable
+import trombone.Pathfinder.checkStall
 import trombone.Pathfinder.clearProcess
 import trombone.Pathfinder.setupPathing
 import trombone.Pathfinder.updateProcess
@@ -47,6 +48,7 @@ object Trombone {
 
         if (pauseCheck()) return
 
+        checkStall()
         updateProcess()
         runTasks()
         updateRotation()

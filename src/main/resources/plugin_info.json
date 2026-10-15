@@ -1,7 +1,7 @@
 {
   "name": "HighwayTools",
-  "version": "11.0.0",
-  "authors": [ "Constructor" ],
+  "version": "11.1.5",
+  "authors": [ "Constructor+deadramstick" ],
   "description": "Build highways with ease",
   "url": "https://github.com/lambda-plugins/HighwayTools",
   "min_api_version": "3.2",

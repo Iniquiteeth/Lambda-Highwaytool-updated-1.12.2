@@ -14,9 +14,12 @@ import net.minecraft.block.BlockShulkerBox
 import net.minecraft.init.Items
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.util.EnumFacing
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Vec3d
 import trombone.Pathfinder.startingBlockPos
+import trombone.interaction.Place.findPlaceFace
 import kotlin.random.Random
 
 class BlockTask(
@@ -34,6 +37,12 @@ class BlockTask(
     var eyeDistance = 0.0; private set
 
     var sequence: List<PlaceInfo> = emptyList(); private set
+
+    /* Block and side the placement is sent against. With Raytrace on this face is verified to be visible from the eyes. */
+    var placeFace: Pair<BlockPos, EnumFacing>? = null; private set
+
+    /* The exact point on that face. Rotation and the packet cursor offset both use it. */
+    var placeHitVec: Vec3d? = null; private set
     var isLiquidSource = false
 
     var isOpen = false
@@ -84,6 +93,15 @@ class BlockTask(
         when (taskState) {
             TaskState.PLACE, TaskState.LIQUID -> {
                 sequence = event.getNeighbourSequence(blockPos, placementSearch, maxReach, !illegalPlacements)
+                val face = event.findPlaceFace(sequence, blockPos)
+                placeFace = face?.let { Pair(it.pos, it.side) }
+                placeHitVec = face?.hitVec
+
+                /*
+                 * No face that can be seen from the eyes: treat it like having no neighbours, so the
+                 * bot waits / bridges / walks to a better spot instead of sending a placement NCP denies.
+                 */
+                if (face == null) sequence = emptyList()
             }
             else -> {}
         }
@@ -111,8 +129,8 @@ class BlockTask(
     }
 
     override fun equals(other: Any?) = this === other
-        || (other is BlockTask
-        && blockPos == other.blockPos)
+            || (other is BlockTask
+            && blockPos == other.blockPos)
 
     override fun hashCode() = blockPos.hashCode()
 }

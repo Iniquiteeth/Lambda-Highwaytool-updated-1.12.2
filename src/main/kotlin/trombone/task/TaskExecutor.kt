@@ -14,6 +14,7 @@ import HighwayTools.keepFreeSlots
 import HighwayTools.leaveEmptyShulkers
 import HighwayTools.material
 import HighwayTools.mode
+import HighwayTools.pickaxeAmount
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.module.modules.player.InventoryManager
 import com.lambda.client.util.TickTimer
@@ -152,6 +153,13 @@ object TaskExecutor {
                 } else if (mode != Trombone.Structure.TUNNEL && containerTask.item == material.item) {
                     containerTask.stopPull = false
                 }
+            }
+
+            /* Pickaxes: keep pulling until the wanted amount is reached (stacks are queued, so add the ones already pulled) */
+            if (containerTask.item is ItemPickaxe
+                && player.inventorySlots.countItem<ItemPickaxe>() + containerTask.stacksPulled < pickaxeAmount
+            ) {
+                containerTask.stopPull = false
             }
         } ?: run {
             if (containerTask.stacksPulled == 0) {

@@ -10,7 +10,6 @@ import HighwayTools.preferEnderChests
 import HighwayTools.saveEnder
 import HighwayTools.saveFood
 import HighwayTools.saveMaterial
-import HighwayTools.saveTools
 import HighwayTools.searchEChest
 import com.lambda.client.commons.extension.ceilToInt
 import com.lambda.client.event.SafeClientEvent
@@ -29,6 +28,7 @@ import net.minecraft.init.Items
 import net.minecraft.inventory.ItemStackHelper
 import net.minecraft.inventory.Slot
 import net.minecraft.item.Item
+import net.minecraft.item.ItemPickaxe
 import net.minecraft.item.ItemShulkerBox
 import net.minecraft.item.ItemStack
 import net.minecraft.util.EnumFacing
@@ -38,6 +38,7 @@ import net.minecraft.util.math.BlockPos
 import net.minecraft.util.text.TextFormatting
 import trombone.blueprint.BlueprintGenerator.isInsideBlueprintBuild
 import trombone.IO.disableError
+import trombone.Pathfinder.canRestockHere
 import trombone.Pathfinder.currentBlockPos
 import trombone.handler.Inventory.zipInventory
 import trombone.task.BlockTask
@@ -51,9 +52,12 @@ object Container {
 
     /** True when fewer pickaxes than the "Pickaxe Amount" setting are in the inventory. */
     fun SafeClientEvent.needsPickaxeRestock(): Boolean =
-        player.inventorySlots.countItem(Items.DIAMOND_PICKAXE) < pickaxeAmount
+        player.inventorySlots.countItem<ItemPickaxe>() < pickaxeAmount
 
     fun SafeClientEvent.handleRestock(item: Item) {
+        /* With Wall Off the bot stands on a side of the road: walk back to the middle before placing a container */
+        if (!canRestockHere()) return
+
         if (preferEnderChests && item.block == Blocks.OBSIDIAN) {
             handleEnderChest(item)
         } else {
@@ -223,9 +227,13 @@ object Container {
         var message = ""
         if (saveMaterial > 0 && item == material.item) message += insufficientMaterialPrint(itemCount, saveMaterial, material.localizedName)
         if (saveEnder > 0 && item.block == Blocks.ENDER_CHEST) message += insufficientMaterialPrint(itemCount, saveEnder, Blocks.ENDER_CHEST.localizedName)
-        if (item == Items.DIAMOND_PICKAXE) message += insufficientMaterialPrint(itemCount, maxOf(saveTools, pickaxeAmount - 1), "Diamond Pickaxe(s)")
+        if (item == Items.DIAMOND_PICKAXE) message += insufficientMaterialPrint(player.inventorySlots.countItem<ItemPickaxe>(), pickaxeAmount - 1, "Diamond Pickaxe(s)")
         if (saveFood > 0 && item == Items.GOLDEN_APPLE) message += insufficientMaterialPrint(itemCount, saveFood, "Golden Apple(s)")
-        return "$message\nTo continue anyways, set setting in ${TextFormatting.GRAY}Storage Management > Save <Material>${TextFormatting.RESET} to zero."
+        return if (item == Items.DIAMOND_PICKAXE) {
+            "$message\nTo continue anyways, lower ${TextFormatting.GRAY}Storage Management > Pickaxe Amount${TextFormatting.RESET}."
+        } else {
+            "$message\nTo continue anyways, set setting in ${TextFormatting.GRAY}Storage Management > Save <Material>${TextFormatting.RESET} to zero."
+        }
     }
 
     private fun insufficientMaterialPrint(itemCount: Int, settingCount: Int, name: String) =
